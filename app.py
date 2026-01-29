@@ -1,29 +1,61 @@
-from flask import Flask, render_template, request, jsonify
-from transformers import pipeline
+music-player-import asyncio
+from pyrogram import Client, filters
+from pytgcalls import PyTgCalls
+from pytgcalls.types import MediaStream
+from yt_dlp import YoutubeDL
 
-app = Flask(__name__)
+# --- अपनी डिटेल्स यहाँ भरें ---
+API_ID = 20301186
+API_HASH = "924bf76387428a6140550b45b1b8979f"
+SESSION_STRING = "BQE1xYIAMACoAGTDtIn-vPaBA9m7Zv-NFrMKwJljJxMzM8rGwCR_48JE1o1ZzhqlJFUiHKVOBnCaycCdWQE0gW7MZFc2oeUtKOA7SGOHS5NrbJX1uH_Ev7mycBGq2yd7U4mBWI42bo7lHwrbTqH2id9kXBfij2-fSOyKttCUsmxxD8ybhLKNSp1qcAH_OzIDvzzh4ywptyMNs-nvr4eCc-cDmEVy96-QSbbCKBXB79GZfVHGHzgpyuuIq2T8LfrKj4VwsqPR3j5CwTgfrNYBkF-DYcMrNfwy_bOrwB_XY-yPXvwrMi8W9WSOHxX8SBMG-wVYoHmSY0Qj4BcQfeptLLwY306kHAAAAAFqiMZ6AA" 
 
-# Simple code generator model
-generator = pipeline(
-    "text-generation",
-    model="gpt2",
-    max_length=200
-)
+# क्लाइंट सेटअप
+app = Client("MusicBot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
+call_py = PyTgCalls(app)
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+# YouTube सर्च सेटिंग्स
+YDL_OPTIONS = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "default_search": "ytsearch",
+    "nocheckcertificate": True
+}
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    user_input = request.json.get("message")
+# 1. /play कमांड (ऑडियो के लिए)
+@app.on_message(filters.command("play") & filters.group)
+async def play_audio(_, message):
+    query = " ".join(message.command[1:])
+    if not query:
+        return await message.reply("❌ कृपया गाने का नाम लिखें।")
+    
+    m = await message.reply("🔎 गाना खोज रहा हूँ...")
+    try:
+        with YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(query, download=False)['entries'][0]
+            url = info['url']
+        
+        # वॉइस चैट में प्ले करना
+        await call_py.play(message.chat.id, MediaStream(url, video_flags=False))
+        await m.edit(f"🎶 **चल रहा है:** {info['title']}")
+    except Exception as e:
+        await m.edit(f"❌ एरर: {e}")
 
-    prompt = f"Write a Python script that does the following:\n{user_input}\nCode:\n"
-    result = generator(prompt)[0]["generated_text"]
+# 2. /stop कमांड
+@app.on_message(filters.command("stop") & filters.group)
+async def stop_stream(_, message):
+    try:
+        await call_py.leave_call(message.chat.id)
+        await message.reply("⏹ स्ट्रीमिंग बंद!")
+    except:
+        await message.reply("❌ कोई कॉल एक्टिव नहीं है।")
 
-    return jsonify({"reply": result})
+# बोट शुरू करने का फंक्शन
+async def run_bot():
+    await app.start()
+    await call_py.start()
+    print("✅ बोट अब तैयार है!")
+    await asyncio.idle()
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_bot())
